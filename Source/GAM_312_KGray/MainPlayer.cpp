@@ -4,9 +4,10 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h" 
-
-// --- WEEK 2: INCLUDE OUR NEW ITEM CLASS ---
 #include "InteractableItem.h"
+
+// --- CUSTOM UI: INCLUDE WIDGET MODULE ---
+#include "Blueprint/UserWidget.h"
 
 // Sets default values
 AMainPlayer::AMainPlayer()
@@ -37,6 +38,18 @@ void AMainPlayer::BeginPlay()
 
 	// --- WEEK 2: START STAT TIMER ---
 	GetWorldTimerManager().SetTimer(StatTimerHandle, this, &AMainPlayer::HandleStatsOverTime, 1.0f, true);
+
+	// --- CUSTOM UI: SPAWN THE WIDGET ---
+	// Check if we assigned a UI in the Unreal Editor
+	if (StatsWidgetClass)
+	{
+		// Create the widget and add it to the player's screen
+		StatsWidget = CreateWidget<UUserWidget>(GetWorld(), StatsWidgetClass);
+		if (StatsWidget)
+		{
+			StatsWidget->AddToViewport();
+		}
+	}
 }
 
 // Called every frame
@@ -111,40 +124,37 @@ void AMainPlayer::Interact()
 
 	if (bHit)
 	{
-		// Decrease stamina when performing a task
 		if (Stamina > 0.0f)
 		{
 			Stamina -= 5.0f;
 		}
 
-		// 1. Get the raw Actor we hit
 		AActor* HitActor = HitResult.GetActor();
 		if (HitActor)
 		{
-			// 2. Cast it to see if it is specifically an AInteractableItem
 			AInteractableItem* HitItem = Cast<AInteractableItem>(HitActor);
 
-			// 3. If the cast succeeds, it is one of our resource nodes!
 			if (HitItem)
 			{
 				EResourceType GatheredType;
 
-				// 4. Call the gather function. If it returns true, the node wasn't empty.
 				if (HitItem->GatherResource(GatheredType))
 				{
-					// 5. Check which type of resource we got and update the correct inventory slot
 					switch (GatheredType)
 					{
 					case EResourceType::Wood:
 						Wood++;
+						ShowResourcePopup(GatheredType, 1); // <--- NEW TRIGGER CALL
 						UE_LOG(LogTemp, Warning, TEXT("Gathered Wood! Total: %d"), Wood);
 						break;
 					case EResourceType::Stone:
 						Stone++;
+						ShowResourcePopup(GatheredType, 1); // <--- NEW TRIGGER CALL
 						UE_LOG(LogTemp, Warning, TEXT("Gathered Stone! Total: %d"), Stone);
 						break;
 					case EResourceType::Berry:
 						Berry++;
+						ShowResourcePopup(GatheredType, 1); // <--- NEW TRIGGER CALL
 						UE_LOG(LogTemp, Warning, TEXT("Gathered Berry! Total: %d"), Berry);
 						break;
 					}
