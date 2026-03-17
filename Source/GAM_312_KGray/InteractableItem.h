@@ -4,8 +4,9 @@
 #include "GameFramework/Actor.h"
 #include "InteractableItem.generated.h"
 
-// --- WEEK 2: RESOURCE ENUM ---
-// This creates a drop-down menu in the Unreal Editor to select the item type
+// --- ENUM DECLARATION ---
+// I am defining the specific types of resources the player can harvest here. (Can easily build more)
+// BlueprintType allows me to select this enum from a drop-down menu in the Unreal Editor.
 UENUM(BlueprintType)
 enum class EResourceType : uint8
 {
@@ -24,26 +25,20 @@ public:
 	AInteractableItem();
 
 protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
-
-	// The physical 3D model of the item (the tree, rock, or bush mesh)
+	// The physical 3D representation of my resource node ( Tree, Rock, Bush)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	class UStaticMeshComponent* ItemMesh;
 
-	// The type of resource this specific object will give the player
+	// The specific type of resource this node contains, which I can set in the Editor
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource")
 	EResourceType ResourceType;
 
-	// How many resources this item holds before it is completely depleted
+	// The number of times this specific node can be harvested before it is destroyed
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource")
 	int32 ResourceCapacity;
 
 public:
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
-
-	// Function called by the player when hit by the line trace
-	// Returns true if successfully gathered, and passes back the type of resource
+	// This function is called by the player's Line Trace. 
+	// It returns true if harvesting was successful and passes the resource type back to the player.
 	bool GatherResource(EResourceType& OutResourceType);
 };
