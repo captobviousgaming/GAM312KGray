@@ -4,17 +4,17 @@
 // Sets default values
 ABuildablePiece::ABuildablePiece()
 {
-	// Building pieces are static structures, so I disabled Tick to save performance.
+	// [Week 3] Building pieces are static structures once placed, so I disabled Tick to save on performance.
 	PrimaryActorTick.bCanEverTick = false;
 
-	// I initialize the visual mesh component and set it as the root of the object.
+	// [Week 3] I initialize the visual mesh component and set it as the root of the object.
 	PieceMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PieceMesh"));
 	RootComponent = PieceMesh;
 
-	// I initialize default material costs here. These will be overridden in the individual Blueprints.
+	// [Week 3] Initializing default material costs here. These get overridden in the individual Blueprints for walls, floors, etc.
 	WoodCost = 5;
 	StoneCost = 0;
 
-	// NEW: Default to wall. Don't forget to change this in your Floor and Roof blueprints!
+	// [Week 3] Defaulting to wall so it has a baseline type.
 	PieceType = EPieceType::Wall;
 }

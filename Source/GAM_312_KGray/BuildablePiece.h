@@ -4,7 +4,8 @@
 #include "GameFramework/Actor.h"
 #include "BuildablePiece.generated.h"
 
-// NEW: We need to know what type of piece this is so we can enforce specific snapping rules!
+// [Week 3] I created this enum so the building system knows exactly what type of piece it's handling. 
+// This is super important for enforcing specific placement rules, like making sure a roof only snaps to a wall.
 UENUM(BlueprintType)
 enum class EPieceType : uint8
 {
@@ -23,30 +24,30 @@ public:
 	ABuildablePiece();
 
 protected:
-	// The physical 3D model of my building piece
+	// [Week 3] The physical 3D model of the building piece that the player places in the world.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	class UStaticMeshComponent* PieceMesh;
 
-	// The amount of wood required for the player to craft this specific piece
+	// [Week 3] Setting up resource costs for crafting. 
+	// I expose these to Blueprint so I can easily tweak the balancing later without recompiling C++.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Building Cost")
 	int32 WoodCost;
 
-	// The amount of stone required for the player to craft this specific piece
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Building Cost")
 	int32 StoneCost;
 
-	// NEW: What type of piece is this? Set this in the Details panel of your Blueprints.
+	// [Week 3] This tags the piece as a Wall, Floor, or Roof.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Building Rules")
 	EPieceType PieceType;
 
 public:
-	// Getter functions that allow my Player Character to check costs
+	// [Week 3] Getter functions so my MainPlayer script can check if we have enough resources before placing.
 	int32 GetWoodCost() const { return WoodCost; }
 	int32 GetStoneCost() const { return StoneCost; }
 
-	// Getter for the piece type so the player knows what it is looking at
+	// [Week 3] Allows the player to ask the piece what type it is during the line trace.
 	EPieceType GetPieceType() const { return PieceType; }
 
-	// Exposing the mesh so the Player script can swap its material to a translucent silhouette!
+	// [Extra Polish] Exposing the mesh so the Player script can swap its material to a translucent ghost silhouette before placement!
 	class UStaticMeshComponent* GetPieceMesh() const { return PieceMesh; }
 };
