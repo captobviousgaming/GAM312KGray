@@ -2,353 +2,321 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h" 
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h" 
 #include "InteractableItem.h"
 #include "BuildablePiece.h"
 #include "Blueprint/UserWidget.h"
 #include "Math/UnrealMathUtility.h" 
+#include "Materials/MaterialInterface.h"
 
-// Sets default values
 AMainPlayer::AMainPlayer()
 {
-	// I enable Tick here so the building ghost preview can follow the camera smoothly.
 	PrimaryActorTick.bCanEverTick = true;
 
-	// I initialize the camera and attach it to the capsule component.
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
 	FirstPersonCameraComponent->SetupAttachment(GetCapsuleComponent());
 	FirstPersonCameraComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 50.0f));
 	FirstPersonCameraComponent->bUsePawnControlRotation = true;
 
-	// I initialize my default stats and inventory values.
-	Health = 100.0f;
-	Hunger = 100.0f;
-	Stamina = 100.0f;
-	Wood = 0;
-	Stone = 0;
-	Berry = 0;
+	Health = 100.0f; Hunger = 100.0f; Stamina = 100.0f;
+	Wood = 1000; Stone = 1000; Berry = 0;
 
-	// Menu and building variable initialization
 	bIsBuildMenuOpen = false;
 	bIsInventoryOpen = false;
 	PreviewPiece = nullptr;
 	BuildRotationYaw = 0.0f;
 	CurrentVariationIndex = 0;
+	EquippedPieceIndex = 0;
+
+	SnapGridSize = 200.0f;
+	bCanPlace = false;
 }
 
-// Called when the game starts or when spawned
 void AMainPlayer::BeginPlay()
 {
 	Super::BeginPlay();
-
-	// I start the looping timer to handle stat depletion and restoration over time.
 	GetWorldTimerManager().SetTimer(StatTimerHandle, this, &AMainPlayer::HandleStatsOverTime, 1.0f, true);
 
-	// Spawn the main HUD (Stats) and add it to the screen.
+	AddResourceToInventory(EResourceType::Wall, 5);
+	AddResourceToInventory(EResourceType::Floor, 5);
+	AddResourceToInventory(EResourceType::Roof, 5);
+
 	if (StatsWidgetClass)
 	{
 		StatsWidget = CreateWidget<UUserWidget>(GetWorld(), StatsWidgetClass);
 		if (StatsWidget) { StatsWidget->AddToViewport(); }
 	}
-
-	// Create the Build Menu widget in the background.
-	if (BuildMenuClass)
-	{
-		BuildMenuWidget = CreateWidget<UUserWidget>(GetWorld(), BuildMenuClass);
-	}
-
-	// Create my custom Bag UI in the background so it is ready when the player presses 'I'.
-	if (InventoryMenuClass)
-	{
-		InventoryMenuWidget = CreateWidget<UUserWidget>(GetWorld(), InventoryMenuClass);
-	}
 }
 
-// Called every frame
 void AMainPlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	// If I currently have a building preview active, I update its location.
-	if (PreviewPiece) { UpdateBuildingPreview(); }
+	if (bIsBuildMenuOpen && PreviewPiece) { UpdateBuildingPreview(); }
 }
 
-// Called to bind functionality to input keys
 void AMainPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// Movement bindings
 	PlayerInputComponent->BindAxis("MoveForward", this, &AMainPlayer::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &AMainPlayer::MoveRight);
 	PlayerInputComponent->BindAxis("Turn", this, &APawn::AddControllerYawInput);
 	PlayerInputComponent->BindAxis("LookUp", this, &APawn::AddControllerPitchInput);
 
-	// Interaction and Menu bindings
 	PlayerInputComponent->BindAction("Interact", IE_Pressed, this, &AMainPlayer::Interact);
-	PlayerInputComponent->BindAction("ToggleBuildMenu", IE_Pressed, this, &AMainPlayer::ToggleBuildMenu);
-
-	// Binding for my new Dynamic Inventory UI toggle
 	PlayerInputComponent->BindAction("ToggleInventoryMenu", IE_Pressed, this, &AMainPlayer::ToggleInventoryMenu);
-
-	// Building bindings
+	PlayerInputComponent->BindAction("ToggleBuildMenu", IE_Pressed, this, &AMainPlayer::ToggleBuildMenu);
+	PlayerInputComponent->BindAction("SelectWall", IE_Pressed, this, &AMainPlayer::SelectWall);
+	PlayerInputComponent->BindAction("SelectFloor", IE_Pressed, this, &AMainPlayer::SelectFloor);
+	PlayerInputComponent->BindAction("SelectRoof", IE_Pressed, this, &AMainPlayer::SelectRoof);
 	PlayerInputComponent->BindAction("PlaceBuilding", IE_Pressed, this, &AMainPlayer::PlaceBuilding);
 	PlayerInputComponent->BindAction("RotateBuilding", IE_Pressed, this, &AMainPlayer::RotateBuilding);
 	PlayerInputComponent->BindAction("CycleVariation", IE_Pressed, this, &AMainPlayer::CycleBuildingVariation);
 }
 
-void AMainPlayer::MoveForward(float Value) { if (Value != 0.0f) { AddMovementInput(GetActorForwardVector(), Value); } }
-void AMainPlayer::MoveRight(float Value) { if (Value != 0.0f) { AddMovementInput(GetActorRightVector(), Value); } }
-
-// Timer function handling continuous stat changes
-void AMainPlayer::HandleStatsOverTime()
+void AMainPlayer::MoveForward(float Value)
 {
-	// Decrease hunger first; if empty, decrease health. Restore stamina passively up to 100.
-	if (Hunger > 0.0f) { Hunger -= 1.0f; }
-	else { Health -= 2.0f; }
-	if (Stamina < 100.0f) { Stamina += 1.0f; }
+	if (Value != 0.0f) { AddMovementInput(GetActorForwardVector(), Value); }
 }
 
-// Line trace function for harvesting resources
+void AMainPlayer::MoveRight(float Value)
+{
+	if (Value != 0.0f) { AddMovementInput(GetActorRightVector(), Value); }
+}
+
+void AMainPlayer::HandleStatsOverTime()
+{
+	if (Hunger > 0.0f) { Hunger -= 1.0f; }
+	else { Health -= 2.0f; }
+}
+
 void AMainPlayer::Interact()
 {
 	if (!FirstPersonCameraComponent) return;
+	FVector Start = FirstPersonCameraComponent->GetComponentLocation();
+	FVector End = Start + (FirstPersonCameraComponent->GetForwardVector() * 500.0f);
+	FHitResult Hit;
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
 
-	// Calculate a trace starting from the camera and moving 500 units directly forward.
-	FVector StartLocation = FirstPersonCameraComponent->GetComponentLocation();
-	FVector ForwardVector = FirstPersonCameraComponent->GetForwardVector();
-	FVector EndLocation = StartLocation + (ForwardVector * 500.0f);
-
-	FHitResult HitResult;
-	FCollisionQueryParams CollisionParams;
-	CollisionParams.AddIgnoredActor(this);
-
-	// Execute the trace
-	bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility, CollisionParams);
-
-	if (bHit)
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
 	{
-		// Drain stamina upon a successful interaction swing.
-		if (Stamina > 0.0f) { Stamina -= 5.0f; }
-
-		// Check if the hit object is one of my interactable resource nodes.
-		AActor* HitActor = HitResult.GetActor();
-		if (HitActor)
+		AInteractableItem* Item = Cast<AInteractableItem>(Hit.GetActor());
+		if (Item)
 		{
-			AInteractableItem* HitItem = Cast<AInteractableItem>(HitActor);
-			if (HitItem)
+			EResourceType Type;
+			if (Item->GatherResource(Type))
 			{
-				EResourceType GatheredType;
-				// Attempt to gather; if successful, determine the type and update arrays.
-				if (HitItem->GatherResource(GatheredType))
-				{
-					// Update my raw integers so the existing building logic doesn't break.
-					switch (GatheredType)
-					{
-					case EResourceType::Wood: Wood++; break;
-					case EResourceType::Stone: Stone++; break;
-					case EResourceType::Berry: Berry++; break;
-					}
-
-					// Trigger my visual resource popup.
-					ShowResourcePopup(GatheredType, 1);
-
-					// Pass the gathered item into my dynamic inventory array for the Bag UI.
-					AddResourceToInventory(GatheredType, 1);
-				}
+				if (Type == EResourceType::Wood) Wood++;
+				else if (Type == EResourceType::Stone) Stone++;
+				ShowResourcePopup(Type, 1);
+				AddResourceToInventory(Type, 1);
 			}
 		}
 	}
 }
 
-// --- ARRAY SORTING LOGIC ---
-// I created this to handle the math of stacking items before passing them to the UI.
-void AMainPlayer::AddResourceToInventory(EResourceType GatheredType, int32 Amount)
+void AMainPlayer::AddResourceToInventory(EResourceType Type, int32 Amount)
 {
-	// First, I loop through my existing inventory array to see if a stack of this item type already exists.
-	for (int32 i = 0; i < InventoryArray.Num(); i++)
+	for (auto& Item : InventoryArray)
 	{
-		if (InventoryArray[i].ItemType == GatheredType)
+		if (Item.ItemType == Type) { Item.Quantity += Amount; return; }
+	}
+	InventoryArray.Add(FInventoryItem(Type, Amount));
+}
+
+bool AMainPlayer::HasBuildingItem(EPieceType Type)
+{
+	EResourceType TargetRes;
+	if (Type == EPieceType::Wall) TargetRes = EResourceType::Wall;
+	else if (Type == EPieceType::Floor) TargetRes = EResourceType::Floor;
+	else if (Type == EPieceType::Roof) TargetRes = EResourceType::Roof;
+	else return false;
+
+	for (const FInventoryItem& Item : InventoryArray)
+	{
+		if (Item.ItemType == TargetRes && Item.Quantity > 0)
 		{
-			// I found a matching stack, so I simply add the gathered amount to its quantity and exit the function.
-			InventoryArray[i].Quantity += Amount;
+			return true;
+		}
+	}
+	return false;
+}
+
+void AMainPlayer::ConsumeBuildingItem(EPieceType Type)
+{
+	EResourceType TargetRes;
+	if (Type == EPieceType::Wall) TargetRes = EResourceType::Wall;
+	else if (Type == EPieceType::Floor) TargetRes = EResourceType::Floor;
+	else if (Type == EPieceType::Roof) TargetRes = EResourceType::Roof;
+	else return;
+
+	for (FInventoryItem& Item : InventoryArray)
+	{
+		if (Item.ItemType == TargetRes && Item.Quantity > 0)
+		{
+			Item.Quantity--;
 			return;
 		}
 	}
-
-	// If the loop finishes without finding a match, I know this is a completely new item.
-	// I add a new FInventoryItem struct to the end of the array, which will generate a new slot in the UI.
-	InventoryArray.Add(FInventoryItem(GatheredType, Amount));
 }
 
-// --- TOGGLE BAG UI ---
-// Handles opening my custom Bag UI, returning mouse control, and refreshing the slots.
 void AMainPlayer::ToggleInventoryMenu()
 {
-	// Ensure we actually selected the UI blueprint in the editor
 	if (!InventoryMenuClass) return;
-
-	APlayerController* PC = Cast<APlayerController>(GetController());
-
 	if (bIsInventoryOpen)
 	{
-		// If it's open, remove it from the screen and clear the variable to destroy it
-		if (InventoryMenuWidget)
-		{
-			InventoryMenuWidget->RemoveFromParent();
-			InventoryMenuWidget = nullptr;
-		}
-
+		if (InventoryMenuWidget) { InventoryMenuWidget->RemoveFromParent(); InventoryMenuWidget = nullptr; }
 		bIsInventoryOpen = false;
-
-		// Hide the mouse and return input to game controls
-		if (PC)
-		{
-			PC->SetShowMouseCursor(false);
-			PC->SetInputMode(FInputModeGameOnly());
-		}
 	}
 	else
 	{
-		// REBUILD the widget fresh every time we open the bag! 
-		// This forces "Event Construct" in the blueprint to run and populate our array loop.
 		InventoryMenuWidget = CreateWidget<UUserWidget>(GetWorld(), InventoryMenuClass);
-		if (InventoryMenuWidget)
-		{
-			InventoryMenuWidget->AddToViewport();
-		}
-
+		if (InventoryMenuWidget) { InventoryMenuWidget->AddToViewport(); }
 		bIsInventoryOpen = true;
-
-		// Show the mouse so the player can interact with their bag slots
-		if (PC)
-		{
-			PC->SetShowMouseCursor(true);
-			PC->SetInputMode(FInputModeGameAndUI());
-		}
 	}
 }
 
-// Toggles my building menu
 void AMainPlayer::ToggleBuildMenu()
 {
-	if (!BuildMenuWidget) return;
-
 	if (bIsBuildMenuOpen)
 	{
-		BuildMenuWidget->RemoveFromParent();
+		if (BuildMenuWidget) { BuildMenuWidget->RemoveFromParent(); }
 		bIsBuildMenuOpen = false;
+		if (PreviewPiece) { PreviewPiece->Destroy(); PreviewPiece = nullptr; }
+		EquippedPieceIndex = 0;
+		UpdateBuildUI(0, false);
 	}
-	else
+	else if (BuildMenuClass)
 	{
-		BuildMenuWidget->AddToViewport();
+		BuildMenuWidget = CreateWidget<UUserWidget>(GetWorld(), BuildMenuClass);
+		if (BuildMenuWidget) { BuildMenuWidget->AddToViewport(); }
 		bIsBuildMenuOpen = true;
 	}
 }
 
-// --- BUILDING SYSTEM LOGIC ---
+void AMainPlayer::SelectWall() { if (bIsBuildMenuOpen) { EquippedPieceIndex = 1; StartBuilding(WallVariations); } }
+void AMainPlayer::SelectFloor() { if (bIsBuildMenuOpen) { EquippedPieceIndex = 2; StartBuilding(FloorVariations); } }
+void AMainPlayer::SelectRoof() { if (bIsBuildMenuOpen) { EquippedPieceIndex = 3; StartBuilding(RoofVariations); } }
 
-void AMainPlayer::StartBuilding(TArray<TSubclassOf<AActor>> Variations)
+void AMainPlayer::StartBuilding(TArray<TSubclassOf<ABuildablePiece>> Variations)
 {
 	if (Variations.Num() == 0) return;
-
 	CurrentBuildingVariations = Variations;
 	CurrentVariationIndex = 0;
-	BuildRotationYaw = 0.0f;
-
-	// I destroy any existing preview ghost to prevent duplicate meshes.
 	if (PreviewPiece) { PreviewPiece->Destroy(); }
 
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	PreviewPiece = GetWorld()->SpawnActor<ABuildablePiece>(CurrentBuildingVariations[0], FVector::ZeroVector, FRotator::ZeroRotator);
+	if (PreviewPiece)
+	{
+		PreviewPiece->SetActorEnableCollision(false);
 
-	// I spawn the preview ghost and cast it to ABuildablePiece
-	PreviewPiece = Cast<ABuildablePiece>(GetWorld()->SpawnActor<AActor>(CurrentBuildingVariations[CurrentVariationIndex], FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams));
+		if (GhostMaterial)
+		{
+			TArray<UStaticMeshComponent*> MeshComps;
+			PreviewPiece->GetComponents<UStaticMeshComponent>(MeshComps);
+			for (UStaticMeshComponent* MeshComp : MeshComps)
+			{
+				for (int32 i = 0; i < MeshComp->GetNumMaterials(); i++)
+				{
+					MeshComp->SetMaterial(i, GhostMaterial);
+				}
+			}
+		}
 
-	// I disable collision on the ghost so it doesn't block the player's movement or trace.
-	if (PreviewPiece) { PreviewPiece->SetActorEnableCollision(false); }
-
-	ToggleBuildMenu();
-}
-
-void AMainPlayer::RotateBuilding()
-{
-	// I add 90 degrees to snap the rotation to clean cardinal directions.
-	BuildRotationYaw += 90.0f;
-	if (BuildRotationYaw >= 360.0f) { BuildRotationYaw = 0.0f; }
-}
-
-void AMainPlayer::CycleBuildingVariation()
-{
-	if (CurrentBuildingVariations.Num() <= 1 || !PreviewPiece) return;
-
-	// I increment the variation index, wrapping back to 0 if I hit the end of the array.
-	CurrentVariationIndex++;
-	if (CurrentVariationIndex >= CurrentBuildingVariations.Num()) { CurrentVariationIndex = 0; }
-
-	FVector CurrentLoc = PreviewPiece->GetActorLocation();
-	PreviewPiece->Destroy();
-
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	// I respawn the new variation at the exact location of the old one.
-	PreviewPiece = Cast<ABuildablePiece>(GetWorld()->SpawnActor<AActor>(CurrentBuildingVariations[CurrentVariationIndex], CurrentLoc, FRotator(0.0f, BuildRotationYaw, 0.0f), SpawnParams));
-
-	if (PreviewPiece) { PreviewPiece->SetActorEnableCollision(false); }
+		bool bHasMats = HasBuildingItem(PreviewPiece->GetPieceType());
+		PreviewPiece->SetActorHiddenInGame(!bHasMats);
+		UpdateBuildUI(EquippedPieceIndex, bHasMats);
+	}
 }
 
 void AMainPlayer::UpdateBuildingPreview()
 {
 	if (!PreviewPiece || !FirstPersonCameraComponent) return;
 
-	FVector StartLocation = FirstPersonCameraComponent->GetComponentLocation();
-	FVector ForwardVector = FirstPersonCameraComponent->GetForwardVector();
-	FVector EndLocation = StartLocation + (ForwardVector * 800.0f);
+	bool bHasMats = HasBuildingItem(PreviewPiece->GetPieceType());
+	PreviewPiece->SetActorHiddenInGame(!bHasMats);
 
-	FHitResult HitResult;
-	FCollisionQueryParams CollisionParams;
-	CollisionParams.AddIgnoredActor(this);
-	CollisionParams.AddIgnoredActor(PreviewPiece); // I make sure the trace ignores the ghost itself
+	FVector Start = FirstPersonCameraComponent->GetComponentLocation();
+	FVector End = Start + (FirstPersonCameraComponent->GetForwardVector() * 800.0f);
+	FHitResult Hit;
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+	Params.AddIgnoredActor(PreviewPiece);
 
-	if (GetWorld()->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility, CollisionParams))
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
 	{
-		// I define my grid size to match the dimensions of my custom 3D models.
-		float GridSize = 200.0f;
+		// FIX: Push the target outward along the surface normal before calculating the grid snap.
+		// This forces pieces to snap to the edge rather than getting stuck inside thin walls!
+		FVector TargetLocation = Hit.Location + (Hit.ImpactNormal * (SnapGridSize * 0.4f));
 
-		// I calculate the snapped location by dividing, rounding, and multiplying against the grid size.
-		FVector SnappedLocation;
-		SnappedLocation.X = FMath::RoundToFloat(HitResult.Location.X / GridSize) * GridSize;
-		SnappedLocation.Y = FMath::RoundToFloat(HitResult.Location.Y / GridSize) * GridSize;
-		SnappedLocation.Z = FMath::RoundToFloat(HitResult.Location.Z / GridSize) * GridSize;
+		float HalfGrid = SnapGridSize / 2.0f;
+		FVector Snapped(
+			FMath::RoundToFloat(TargetLocation.X / HalfGrid) * HalfGrid,
+			FMath::RoundToFloat(TargetLocation.Y / HalfGrid) * HalfGrid,
+			FMath::RoundToFloat(TargetLocation.Z / SnapGridSize) * SnapGridSize
+		);
 
-		// I apply the calculated location and rotation to the preview piece.
-		PreviewPiece->SetActorLocationAndRotation(SnappedLocation, FRotator(0.0f, BuildRotationYaw, 0.0f));
+		bCanPlace = true;
+		ABuildablePiece* HitPiece = Cast<ABuildablePiece>(Hit.GetActor());
+
+		for (TActorIterator<ABuildablePiece> It(GetWorld()); It; ++It)
+		{
+			if (*It != PreviewPiece && FVector::Dist(It->GetActorLocation(), Snapped) < 10.0f)
+			{
+				bCanPlace = false;
+				break;
+			}
+		}
+
+		if (PreviewPiece->GetPieceType() == EPieceType::Roof)
+		{
+			if (HitPiece && HitPiece->GetPieceType() == EPieceType::Wall)
+			{
+				float WallHeightOffset = 300.0f;
+				Snapped.Z = HitPiece->GetActorLocation().Z + WallHeightOffset;
+				bCanPlace = true;
+			}
+			else
+			{
+				bCanPlace = false;
+			}
+		}
+
+		PreviewPiece->SetActorLocationAndRotation(Snapped, FRotator(0, BuildRotationYaw, 0));
+	}
+	else
+	{
+		bCanPlace = false;
 	}
 }
 
 void AMainPlayer::PlaceBuilding()
 {
-	if (!PreviewPiece || CurrentBuildingVariations.Num() == 0) return;
-
-	// I verify that the player has enough raw resources to afford the piece.
-	if (Wood >= PreviewPiece->GetWoodCost() && Stone >= PreviewPiece->GetStoneCost())
+	if (PreviewPiece && CurrentBuildingVariations.Num() > 0 && bCanPlace)
 	{
-		// I deduct the resources.
-		Wood -= PreviewPiece->GetWoodCost();
-		Stone -= PreviewPiece->GetStoneCost();
+		if (HasBuildingItem(PreviewPiece->GetPieceType()))
+		{
+			ConsumeBuildingItem(PreviewPiece->GetPieceType());
 
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			GetWorld()->SpawnActor<ABuildablePiece>(CurrentBuildingVariations[CurrentVariationIndex], PreviewPiece->GetActorLocation(), PreviewPiece->GetActorRotation());
 
-		// I spawn the physical, solid AActor precisely where the preview ghost was located.
-		GetWorld()->SpawnActor<AActor>(CurrentBuildingVariations[CurrentVariationIndex], PreviewPiece->GetActorLocation(), PreviewPiece->GetActorRotation(), SpawnParams);
-
-		UE_LOG(LogTemp, Warning, TEXT("Successfully Built! Remaining Wood: %d, Stone: %d"), Wood, Stone);
+			bool bHasMats = HasBuildingItem(PreviewPiece->GetPieceType());
+			UpdateBuildUI(EquippedPieceIndex, bHasMats);
+		}
 	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Not enough resources to build this!"));
-	}
+}
+
+void AMainPlayer::RotateBuilding()
+{
+	BuildRotationYaw = FMath::Fmod(BuildRotationYaw + 90.0f, 360.0f);
+}
+
+void AMainPlayer::CycleBuildingVariation()
+{
+	if (!PreviewPiece || CurrentBuildingVariations.Num() <= 1) return;
+	CurrentVariationIndex = (CurrentVariationIndex + 1) % CurrentBuildingVariations.Num();
+	StartBuilding(CurrentBuildingVariations);
 }
