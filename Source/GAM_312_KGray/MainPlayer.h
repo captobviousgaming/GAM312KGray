@@ -43,6 +43,7 @@ protected:
 	class UCameraComponent* FirstPersonCameraComponent;
 
 	// [Week 2] Player Stats setup. 
+	// [Week 4] Exposed to Blueprint so our 2D/3D Player Stat HUD can bind to these for the Health, Hunger, and Stamina progress bars.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Stats")
 	float Health;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Stats")
@@ -140,6 +141,7 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	// [Week 3] Widget references for Stats and Menus.
+	// [Week 4] StatsWidgetClass is the Blueprint template for our Player Stat HUD containing the progress bars.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<class UUserWidget> StatsWidgetClass;
 	UPROPERTY()

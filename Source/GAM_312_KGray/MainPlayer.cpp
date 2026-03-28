@@ -23,6 +23,7 @@ AMainPlayer::AMainPlayer()
 	FirstPersonCameraComponent->bUsePawnControlRotation = true;
 
 	// [Week 2] Initializing default player stats.
+	// [Week 4] Setting the base values that will fill our HUD progress bars to 100% on start.
 	Health = 100.0f; Hunger = 100.0f; Stamina = 100.0f;
 	Wood = 1000; Stone = 1000; Berry = 0;
 
@@ -52,6 +53,7 @@ void AMainPlayer::BeginPlay()
 	AddResourceToInventory(EResourceType::Roof, 5);
 
 	// [Week 3] Create the stats widget and add it to the viewport immediately.
+	// [Week 4] This is where the Player Stat HUD is actively spawned onto the player's screen to display the progress bars.
 	if (StatsWidgetClass)
 	{
 		StatsWidget = CreateWidget<UUserWidget>(GetWorld(), StatsWidgetClass);
@@ -103,6 +105,7 @@ void AMainPlayer::MoveRight(float Value)
 void AMainPlayer::HandleStatsOverTime()
 {
 	// [Week 2] Drop hunger first. If hunger is empty, start dropping health!
+	// [Week 4] As this timer ticks down the values, our Player Stat HUD reads the changes and visually drains the progress bars.
 	if (Hunger > 0.0f) { Hunger -= 1.0f; }
 	else { Health -= 2.0f; }
 }
