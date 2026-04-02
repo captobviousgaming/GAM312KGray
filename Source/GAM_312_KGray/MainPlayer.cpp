@@ -38,6 +38,11 @@ AMainPlayer::AMainPlayer()
 	// [Week 3] Our default grid snap size. Can be overridden in Blueprints!
 	SnapGridSize = 200.0f;
 	bCanPlace = false;
+
+	// [Week 5] Initialize our objective tracking variables to 0 at the start of the game.
+	TotalMaterialsGathered = 0;
+	TotalPartsBuilt = 0;
+	bAreObjectivesComplete = false;
 }
 
 void AMainPlayer::BeginPlay()
@@ -59,6 +64,9 @@ void AMainPlayer::BeginPlay()
 		StatsWidget = CreateWidget<UUserWidget>(GetWorld(), StatsWidgetClass);
 		if (StatsWidget) { StatsWidget->AddToViewport(); }
 	}
+
+	// [Week 5] Broadcast the initial objective values (0) to the HUD right when the game starts.
+	UpdateObjectiveHUD(TotalMaterialsGathered, 500, TotalPartsBuilt, 5);
 }
 
 void AMainPlayer::Tick(float DeltaTime)
@@ -137,6 +145,11 @@ void AMainPlayer::Interact()
 
 				ShowResourcePopup(Type, 1); // Trigger UI feedback.
 				AddResourceToInventory(Type, 1); // Store in the backpack array.
+
+				// [Week 5] Whenever we successfully gather a resource, we iterate our objective counter.
+				TotalMaterialsGathered++;
+				CheckObjectives();
+				UpdateObjectiveHUD(TotalMaterialsGathered, 500, TotalPartsBuilt, 5);
 			}
 		}
 	}
@@ -353,6 +366,11 @@ void AMainPlayer::PlaceBuilding()
 			// Tell the UI to check if that was our last piece and update the icon if necessary.
 			bool bHasMats = HasBuildingItem(PreviewPiece->GetPieceType());
 			UpdateBuildUI(EquippedPieceIndex, bHasMats);
+
+			// [Week 5] Whenever we successfully place a piece, iterate our build objective counter.
+			TotalPartsBuilt++;
+			CheckObjectives();
+			UpdateObjectiveHUD(TotalMaterialsGathered, 500, TotalPartsBuilt, 5);
 		}
 	}
 }
@@ -369,4 +387,15 @@ void AMainPlayer::CycleBuildingVariation()
 	if (!PreviewPiece || CurrentBuildingVariations.Num() <= 1) return;
 	CurrentVariationIndex = (CurrentVariationIndex + 1) % CurrentBuildingVariations.Num();
 	StartBuilding(CurrentBuildingVariations);
+}
+
+// [Week 5] Centralized logic check to see if the player has won/completed the goals.
+void AMainPlayer::CheckObjectives()
+{
+	// Only trigger completion if it hasn't been completed already and thresholds are met.
+	if (!bAreObjectivesComplete && TotalMaterialsGathered >= 500 && TotalPartsBuilt >= 5)
+	{
+		bAreObjectivesComplete = true;
+		ObjectivesCompleteHUD(); // Fire the win state to Blueprints!
+	}
 }

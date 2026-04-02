@@ -136,6 +136,31 @@ protected:
 	int32 CurrentVariationIndex;
 	TArray<TSubclassOf<ABuildablePiece>> CurrentBuildingVariations;
 
+	// --- [WEEK 5] OBJECTIVE SYSTEM VARIABLES --- //
+
+	// [Week 5] Tracks the total amount of materials the player has gathered from nodes.
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Objectives")
+	int32 TotalMaterialsGathered;
+
+	// [Week 5] Tracks the total amount of structures (walls, floors, roofs) successfully placed.
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Objectives")
+	int32 TotalPartsBuilt;
+
+	// [Week 5] Flag that becomes true once both the gathering and building objectives are met.
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Objectives")
+	bool bAreObjectivesComplete;
+
+	// [Week 5] Internal function to verify if the threshold for the objectives has been met.
+	void CheckObjectives();
+
+	// [Week 5] Event sent to Blueprints to update the on-screen Objective HUD (Text and Icons).
+	UFUNCTION(BlueprintImplementableEvent, Category = "Objectives|UI")
+	void UpdateObjectiveHUD(int32 CurrentMaterials, int32 MaxMaterials, int32 CurrentParts, int32 MaxParts);
+
+	// [Week 5] Event sent to Blueprints to trigger a "Mission Complete" state or animation.
+	UFUNCTION(BlueprintImplementableEvent, Category = "Objectives|UI")
+	void ObjectivesCompleteHUD();
+
 public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -144,7 +169,9 @@ public:
 	// [Week 4] StatsWidgetClass is the Blueprint template for our Player Stat HUD containing the progress bars.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<class UUserWidget> StatsWidgetClass;
-	UPROPERTY()
+
+	// [Corrected] Added BlueprintReadWrite so it can be seen in the Event Graph
+	UPROPERTY(BlueprintReadWrite, Category = "UI")
 	class UUserWidget* StatsWidget;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")
