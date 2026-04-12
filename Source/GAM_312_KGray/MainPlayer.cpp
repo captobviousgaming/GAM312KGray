@@ -10,6 +10,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Math/UnrealMathUtility.h" 
 #include "Materials/MaterialInterface.h"
+#include "GameFramework/PlayerController.h" // [Week 6] Required to interact with the mouse cursor for UI
 
 AMainPlayer::AMainPlayer()
 {
@@ -43,6 +44,10 @@ AMainPlayer::AMainPlayer()
 	TotalMaterialsGathered = 0;
 	TotalPartsBuilt = 0;
 	bAreObjectivesComplete = false;
+
+	// [Week 6] Initialize our win/lose game variables. 300 seconds = 5 minutes allotted time.
+	TimeRemaining = 300;
+	bIsGameOver = false;
 }
 
 void AMainPlayer::BeginPlay()
@@ -50,6 +55,7 @@ void AMainPlayer::BeginPlay()
 	Super::BeginPlay();
 
 	// [Week 2] Start the timer that drains hunger/health.
+	// [Week 6] This timer will also now manage our countdown clock every 1 second.
 	GetWorldTimerManager().SetTimer(StatTimerHandle, this, &AMainPlayer::HandleStatsOverTime, 1.0f, true);
 
 	// [Week 3] I give the player 5 of each pre-made building item right at the start to test the shelter system!
@@ -72,6 +78,10 @@ void AMainPlayer::BeginPlay()
 void AMainPlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// [Week 6] If the game is over, we shouldn't allow the player to interact or build, so we stop ticking this logic.
+	if (bIsGameOver) return;
+
 	// [Week 3] If we have the build menu open and are holding a piece, update its position every frame based on camera view.
 	if (bIsBuildMenuOpen && PreviewPiece) { UpdateBuildingPreview(); }
 }
@@ -102,25 +112,50 @@ void AMainPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 void AMainPlayer::MoveForward(float Value)
 {
+	if (bIsGameOver) return; // [Week 6] Stop moving if game over
 	if (Value != 0.0f) { AddMovementInput(GetActorForwardVector(), Value); } // [Week 1]
 }
 
 void AMainPlayer::MoveRight(float Value)
 {
+	if (bIsGameOver) return; // [Week 6] Stop moving if game over
 	if (Value != 0.0f) { AddMovementInput(GetActorRightVector(), Value); } // [Week 1]
 }
 
 void AMainPlayer::HandleStatsOverTime()
 {
+	if (bIsGameOver) return; // [Week 6] Stop draining stats if the game is already over.
+
 	// [Week 2] Drop hunger first. If hunger is empty, start dropping health!
 	// [Week 4] As this timer ticks down the values, our Player Stat HUD reads the changes and visually drains the progress bars.
 	if (Hunger > 0.0f) { Hunger -= 1.0f; }
 	else { Health -= 2.0f; }
+
+	// --- [WEEK 6] GAME OVER CHECKS --- //
+
+	// [Week 6] If health drops to 0 or below, trigger the lose state.
+	if (Health <= 0.0f)
+	{
+		Health = 0.0f;
+		GameOver(false); // Pass false because we lost.
+		return;
+	}
+
+	// [Week 6] Tick down the countdown timer.
+	if (TimeRemaining > 0)
+	{
+		TimeRemaining--;
+	}
+	else
+	{
+		// [Week 6] Time ran out before objectives were complete! Trigger the lose state.
+		GameOver(false);
+	}
 }
 
 void AMainPlayer::Interact()
 {
-	if (!FirstPersonCameraComponent) return;
+	if (bIsGameOver || !FirstPersonCameraComponent) return; // [Week 6] Lock interaction if game over
 
 	// [Week 2] Calculate the start and end points for the line trace (500 units forward from the camera).
 	FVector Start = FirstPersonCameraComponent->GetComponentLocation();
@@ -208,7 +243,7 @@ void AMainPlayer::ConsumeBuildingItem(EPieceType Type)
 // [Extra Polish] UI Toggle
 void AMainPlayer::ToggleInventoryMenu()
 {
-	if (!InventoryMenuClass) return;
+	if (bIsGameOver || !InventoryMenuClass) return; // [Week 6] Lock out menu if game is over
 	if (bIsInventoryOpen)
 	{
 		if (InventoryMenuWidget) { InventoryMenuWidget->RemoveFromParent(); InventoryMenuWidget = nullptr; }
@@ -225,6 +260,8 @@ void AMainPlayer::ToggleInventoryMenu()
 // [Week 3] Opens/Closes the Build HUD and cleans up the preview piece if closed.
 void AMainPlayer::ToggleBuildMenu()
 {
+	if (bIsGameOver) return; // [Week 6] Lock out menu if game over
+
 	if (bIsBuildMenuOpen)
 	{
 		if (BuildMenuWidget) { BuildMenuWidget->RemoveFromParent(); }
@@ -241,9 +278,9 @@ void AMainPlayer::ToggleBuildMenu()
 	}
 }
 
-void AMainPlayer::SelectWall() { if (bIsBuildMenuOpen) { EquippedPieceIndex = 1; StartBuilding(WallVariations); } }
-void AMainPlayer::SelectFloor() { if (bIsBuildMenuOpen) { EquippedPieceIndex = 2; StartBuilding(FloorVariations); } }
-void AMainPlayer::SelectRoof() { if (bIsBuildMenuOpen) { EquippedPieceIndex = 3; StartBuilding(RoofVariations); } }
+void AMainPlayer::SelectWall() { if (bIsBuildMenuOpen && !bIsGameOver) { EquippedPieceIndex = 1; StartBuilding(WallVariations); } }
+void AMainPlayer::SelectFloor() { if (bIsBuildMenuOpen && !bIsGameOver) { EquippedPieceIndex = 2; StartBuilding(FloorVariations); } }
+void AMainPlayer::SelectRoof() { if (bIsBuildMenuOpen && !bIsGameOver) { EquippedPieceIndex = 3; StartBuilding(RoofVariations); } }
 
 // [Week 3] Spawns the transparent preview piece and sets it up.
 void AMainPlayer::StartBuilding(TArray<TSubclassOf<ABuildablePiece>> Variations)
@@ -396,6 +433,47 @@ void AMainPlayer::CheckObjectives()
 	if (!bAreObjectivesComplete && TotalMaterialsGathered >= 500 && TotalPartsBuilt >= 5)
 	{
 		bAreObjectivesComplete = true;
+
+		// [Week 6] If objectives are met before time runs out, trigger the Win state!
+		if (!bIsGameOver && TimeRemaining > 0)
+		{
+			GameOver(true); // Pass true because we won!
+		}
 		ObjectivesCompleteHUD(); // Fire the win state to Blueprints!
+	}
+}
+
+// [Week 6] Handles what happens when the player wins or loses.
+void AMainPlayer::GameOver(bool bWon)
+{
+	// Lock out further game state changes (stops player movement, stats draining, building, etc.)
+	bIsGameOver = true;
+
+	// Stop the player from moving or looking around, and reveal the mouse cursor.
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (PC)
+	{
+		PC->bShowMouseCursor = true;
+		PC->SetIgnoreMoveInput(true);
+		PC->SetIgnoreLookInput(true);
+
+		// Switch to UI input only so the player can cleanly click Restart or Quit.
+		FInputModeUIOnly InputMode;
+		PC->SetInputMode(InputMode);
+	}
+
+	// Clean up any hologram building previews if they were open.
+	if (PreviewPiece) { PreviewPiece->Destroy(); PreviewPiece = nullptr; }
+
+	// Spawn the appropriate screen!
+	if (bWon && WinWidgetClass)
+	{
+		UUserWidget* WinWidget = CreateWidget<UUserWidget>(GetWorld(), WinWidgetClass);
+		if (WinWidget) { WinWidget->AddToViewport(); }
+	}
+	else if (!bWon && LoseWidgetClass)
+	{
+		UUserWidget* LoseWidget = CreateWidget<UUserWidget>(GetWorld(), LoseWidgetClass);
+		if (LoseWidget) { LoseWidget->AddToViewport(); }
 	}
 }

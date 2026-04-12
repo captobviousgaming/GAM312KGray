@@ -161,6 +161,28 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Objectives|UI")
 	void ObjectivesCompleteHUD();
 
+	// --- [WEEK 6] WIN/LOSE STATE VARIABLES --- //
+
+	// [Week 6] Tracks the amount of time the player has left to complete the objectives.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game Rules")
+	int32 TimeRemaining;
+
+	// [Week 6] A flag to ensure we don't trigger the end game multiple times.
+	UPROPERTY(BlueprintReadOnly, Category = "Game Rules")
+	bool bIsGameOver;
+
+	// [Week 6] The UI widget to display when the player wins.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<class UUserWidget> WinWidgetClass;
+
+	// [Week 6] The UI widget to display when the player loses.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<class UUserWidget> LoseWidgetClass;
+
+	// [Week 6] Function to handle the end of the game, taking a boolean to determine if it was a win or loss.
+	UFUNCTION(BlueprintCallable, Category = "Game Rules")
+	void GameOver(bool bWon);
+
 public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
